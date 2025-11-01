@@ -5,7 +5,6 @@ Can be called by other Docker containers via labels or HTTP requests.
 """
 
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 import docker
 import logging
 import os
@@ -38,22 +37,36 @@ def origin_allowed(origin):
             return True
         # Wildcard pattern match (e.g., *.royadler.de)
         if '*' in pattern:
-            # Convert wildcard pattern to fnmatch pattern
-            fnmatch_pattern = pattern.replace('*.', '*.').replace('*', '*')
-            if fnmatch.fnmatch(origin, fnmatch_pattern):
-                return True
-            # Also check without protocol for flexibility
+            # Check if origin matches the wildcard pattern
             if '://' in pattern:
-                _, domain_pattern = pattern.split('://', 1)
+                protocol, domain_pattern = pattern.split('://', 1)
                 if '://' in origin:
-                    _, origin_domain = origin.split('://', 1)
-                    if fnmatch.fnmatch(origin_domain, domain_pattern):
+                    origin_protocol, origin_domain = origin.split('://', 1)
+                    # Match protocol and domain pattern
+                    if origin_protocol == protocol and fnmatch.fnmatch(origin_domain, domain_pattern):
                         return True
+            else:
+                # Pattern without protocol, match against full origin
+                if fnmatch.fnmatch(origin, pattern):
+                    return True
     
     return False
 
-# Use origin parameter for callable function, not origins
-CORS(app, origin=origin_allowed, supports_credentials=True)
+@app.after_request
+def after_request(response):
+    """Add CORS headers to all responses."""
+    origin = request.headers.get('Origin')
+    if origin and origin_allowed(origin):
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Container-Name, X-Hostname'
+    
+    if request.method == 'OPTIONS':
+        response.status_code = 200
+    
+    return response
+
 logger.info(f"CORS enabled for origins (with wildcard support): {allowed_origins_config}")
 
 docker_client = None
