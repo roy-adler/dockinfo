@@ -5,7 +5,7 @@ A lightweight HTTP API service that provides a label-based service registry. Ser
 ## Features
 
 - **Label-based service registry** - Services register themselves via Docker Compose labels
-- **Selective visibility** - Only services with `package-info.enable=true` appear in listings
+- **Selective visibility** - Only services with `dockinfo.enable=true` appear in listings
 - **No runtime Docker info** - Returns only label-based metadata, not container status/ports/etc.
 - **Simple REST API** - Easy to query from other services or frontends
 
@@ -30,18 +30,18 @@ services:
   my-service:
     image: my-image:latest
     labels:
-      - "package-info.enable=true"
-      - "package-info.name=My Service"
-      - "package-info.service.url=https://myservice.royadler.de"
-      - "package-info.description=Description of my service"
+      - "dockinfo.enable=true"
+      - "dockinfo.name=My Service"
+      - "dockinfo.service.url=https://myservice.royadler.de"
+      - "dockinfo.description=Description of my service"
 
   another-service:
     image: another-image:latest
     labels:
-      - "package-info.enable=true"
-      - "package-info.name=Another Service"
-      - "package-info.service.url=https://another.royadler.de"
-      - "package-info.description=Another service description"
+      - "dockinfo.enable=true"
+      - "dockinfo.name=Another Service"
+      - "dockinfo.service.url=https://another.royadler.de"
+      - "dockinfo.description=Another service description"
 ```
 
 ## Label Schema
@@ -50,13 +50,13 @@ Services must have the following labels to appear in the registry:
 
 ### Required Labels
 
-- `package-info.enable=true` - Enables the service to appear in listings
+- `dockinfo.enable=true` - Enables the service to appear in listings
 
 ### Optional Labels
 
-- `package-info.name` - Display name (defaults to container name if not set)
-- `package-info.service.url` or `package-info.url` - Service URL
-- `package-info.description` - Service description
+- `dockinfo.name` - Display name (defaults to container name if not set)
+- `dockinfo.service.url` or `dockinfo.url` - Service URL
+- `dockinfo.description` - Service description
 
 ### Example
 
@@ -65,10 +65,10 @@ services:
   my-app:
     image: my-app:latest
     labels:
-      - "package-info.enable=true"
-      - "package-info.name=My Application"
-      - "package-info.service.url=https://myapp.royadler.de"
-      - "package-info.description=A web application for managing tasks"
+      - "dockinfo.enable=true"
+      - "dockinfo.name=My Application"
+      - "dockinfo.service.url=https://myapp.royadler.de"
+      - "dockinfo.description=A web application for managing tasks"
 ```
 
 ## API Endpoints
@@ -84,7 +84,7 @@ Health check endpoint.
 ```
 
 ### `GET /packages`
-List all enabled packages/services (only those with `package-info.enable=true`).
+List all enabled packages/services (only those with `dockinfo.enable=true`).
 
 **Example:**
 ```bash
@@ -142,13 +142,13 @@ Find packages by label filter (returns label-based info only).
 
 **Example:**
 ```bash
-curl "https://dockinfo.royadler.de/by-label?label=package-info.enable=true"
+curl "https://dockinfo.royadler.de/by-label?label=dockinfo.enable=true"
 ```
 
 **Response:**
 ```json
 {
-  "filter": "package-info.enable=true",
+  "filter": "dockinfo.enable=true",
   "count": 2,
   "packages": [
     {
@@ -185,7 +185,7 @@ curl https://dockinfo.royadler.de/packages
 curl https://dockinfo.royadler.de/package/my-service
 
 # Find packages by label
-curl "https://dockinfo.royadler.de/by-label?label=package-info.enable=true"
+curl "https://dockinfo.royadler.de/by-label?label=dockinfo.enable=true"
 ```
 
 ### Example: Python Client
@@ -225,6 +225,6 @@ fetch('https://dockinfo.royadler.de/packages')
 ## Notes
 
 - **Label-based only**: DockInfo reads only from Docker labels, not runtime container status
-- **Selective registration**: Only services with `package-info.enable=true` appear in listings
+- **Selective registration**: Only services with `dockinfo.enable=true` appear in listings
 - **No runtime info**: The API does not return container status, ports, or other runtime Docker information
 - **Production ready**: Uses gunicorn WSGI server, not Flask's development server

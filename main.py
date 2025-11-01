@@ -60,9 +60,9 @@ def get_service_info_from_labels(container_name: str) -> dict:
         labels = container.labels or {}
         
         return {
-            'name': labels.get('package-info.name') or container.name,
-            'url': labels.get('package-info.service.url') or labels.get('package-info.url', ''),
-            'description': labels.get('package-info.description', ''),
+            'name': labels.get('dockinfo.name') or container.name,
+            'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
+            'description': labels.get('dockinfo.description', ''),
         }
     except docker.errors.DockerException as e:
         logger.error(f"Docker connection error: {e}")
@@ -76,7 +76,7 @@ def get_service_info_from_labels(container_name: str) -> dict:
 
 def get_enabled_services() -> list:
     """
-    Get all services that have package-info.enable=true label.
+    Get all services that have dockinfo.enable=true label.
     Returns only label-based metadata (name, url, description).
     """
     try:
@@ -87,15 +87,15 @@ def get_enabled_services() -> list:
         for container in all_containers:
             labels = container.labels or {}
             
-            # Only include containers with package-info.enable=true
-            if labels.get('package-info.enable', '').lower() != 'true':
+            # Only include containers with dockinfo.enable=true
+            if labels.get('dockinfo.enable', '').lower() != 'true':
                 continue
             
             # Extract service information from labels
             service = {
-                'name': labels.get('package-info.name') or container.name,
-                'url': labels.get('package-info.service.url') or labels.get('package-info.url', ''),
-                'description': labels.get('package-info.description', ''),
+                'name': labels.get('dockinfo.name') or container.name,
+                'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
+                'description': labels.get('dockinfo.description', ''),
             }
             
             # Only add if it has at least a name
@@ -184,11 +184,11 @@ def package_info_query():
 def packages_by_label():
     """
     Find packages by label filter (returns label-based info only).
-    Example: /by-label?label=package-info.enable=true
+    Example: /by-label?label=dockinfo.enable=true
     """
     label_filter = request.args.get('label')
     if not label_filter:
-        return jsonify({'error': 'Label filter required (e.g., ?label=package-info.enable=true)'}), 400
+        return jsonify({'error': 'Label filter required (e.g., ?label=dockinfo.enable=true)'}), 400
     
     try:
         # Parse label filter (format: key=value)
@@ -206,9 +206,9 @@ def packages_by_label():
             labels = container.labels or {}
             if labels.get(label_key) == label_value:
                 service = {
-                    'name': labels.get('package-info.name') or container.name,
-                    'url': labels.get('package-info.service.url') or labels.get('package-info.url', ''),
-                    'description': labels.get('package-info.description', ''),
+                    'name': labels.get('dockinfo.name') or container.name,
+                    'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
+                    'description': labels.get('dockinfo.description', ''),
                 }
                 if service['name']:
                     matching_services.append(service)
@@ -248,7 +248,7 @@ def my_info():
 def list_packages():
     """
     List all enabled packages/services based on labels.
-    Only returns services with package-info.enable=true label.
+    Only returns services with dockinfo.enable=true label.
     Returns name, url, and description from labels.
     """
     services = get_enabled_services()
