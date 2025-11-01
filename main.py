@@ -24,7 +24,7 @@ app = Flask(__name__)
 # Allow origins from environment variable (comma-separated list)
 # Supports wildcards like *.royadler.de
 # Default to https://royadler.de if not set
-allowed_origins_config = os.getenv('CORS_ORIGINS', 'https://royadler.de').split(',')
+allowed_origins_config = os.getenv('CORS_ORIGINS', 'https://google.com').split(',')
 allowed_origins_config = [origin.strip() for origin in allowed_origins_config if origin.strip()]
 
 def origin_allowed(origin):
