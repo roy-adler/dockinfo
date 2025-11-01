@@ -304,12 +304,27 @@ def list_containers():
         containers = []
         
         for container in all_containers:
-            containers.append({
-                'name': container.name,
-                'id': container.id[:12],
-                'image': container.image.tags[0] if container.image.tags else container.image.id,
-                'status': container.status,
-            })
+            try:
+                # Safely access container properties
+                image_info = 'unknown'
+                try:
+                    if container.image.tags:
+                        image_info = container.image.tags[0]
+                    else:
+                        image_info = container.image.id[:19] if len(container.image.id) > 19 else container.image.id
+                except:
+                    image_info = 'unknown'
+                
+                containers.append({
+                    'name': container.name,
+                    'id': container.id[:12],
+                    'image': image_info,
+                    'status': container.status,
+                })
+            except Exception as e:
+                logger.warning(f"Error processing container {container.name if hasattr(container, 'name') else 'unknown'}: {e}")
+                # Skip containers that fail to process
+                continue
         
         return jsonify({
             'count': len(containers),
