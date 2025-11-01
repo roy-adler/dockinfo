@@ -49,34 +49,66 @@ def get_docker_client():
     return docker_client
 
 
-def get_container_info(container_name: str) -> dict:
-    """Get information about a container."""
+def get_service_info_from_labels(container_name: str) -> dict:
+    """
+    Get service information from labels only (no runtime Docker info).
+    Returns name, url, description from labels.
+    """
     try:
         client = get_docker_client()
         container = client.containers.get(container_name)
-        attrs = container.attrs
+        labels = container.labels or {}
         
-        info = {
-            'name': container.name,
-            'id': container.id[:12],
-            'image': container.image.tags[0] if container.image.tags else container.image.id,
-            'image_id': container.image.id,
-            'status': container.status,
-            'labels': container.labels,
-            'created': attrs.get('Created'),
-            'ports': attrs.get('NetworkSettings', {}).get('Ports', {}),
-            'environment': attrs.get('Config', {}).get('Env', []),
+        return {
+            'name': labels.get('package-info.name') or container.name,
+            'url': labels.get('package-info.service.url') or labels.get('package-info.url', ''),
+            'description': labels.get('package-info.description', ''),
         }
-        
-        return info
     except docker.errors.DockerException as e:
         logger.error(f"Docker connection error: {e}")
         return {'error': 'Docker daemon not available. Make sure Docker socket is mounted.'}
     except docker.errors.NotFound:
         return {'error': f'Container {container_name} not found'}
     except Exception as e:
-        logger.error(f"Error getting container info: {e}")
+        logger.error(f"Error getting service info: {e}")
         return {'error': str(e)}
+
+
+def get_enabled_services() -> list:
+    """
+    Get all services that have package-info.enable=true label.
+    Returns only label-based metadata (name, url, description).
+    """
+    try:
+        client = get_docker_client()
+        all_containers = client.containers.list(all=True)
+        services = []
+        
+        for container in all_containers:
+            labels = container.labels or {}
+            
+            # Only include containers with package-info.enable=true
+            if labels.get('package-info.enable', '').lower() != 'true':
+                continue
+            
+            # Extract service information from labels
+            service = {
+                'name': labels.get('package-info.name') or container.name,
+                'url': labels.get('package-info.service.url') or labels.get('package-info.url', ''),
+                'description': labels.get('package-info.description', ''),
+            }
+            
+            # Only add if it has at least a name
+            if service['name']:
+                services.append(service)
+        
+        return services
+    except docker.errors.DockerException as e:
+        logger.error(f"Docker connection error: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Error getting enabled services: {e}")
+        return []
 
 
 def get_image_info(image_name: str) -> dict:
@@ -111,10 +143,10 @@ def health():
     return jsonify({'status': 'healthy'})
 
 
-@app.route('/container/<container_name>', methods=['GET'])
-def container_info(container_name: str):
-    """Get information about a specific container."""
-    info = get_container_info(container_name)
+@app.route('/package/<container_name>', methods=['GET'])
+def package_info(container_name: str):
+    """Get label-based information about a specific package/service."""
+    info = get_service_info_from_labels(container_name)
     return jsonify(info)
 
 
@@ -127,28 +159,16 @@ def image_info(image_name: str):
 
 @app.route('/self', methods=['GET'])
 def self_info():
-    """Get information about the container running this service (via labels)."""
-    # Try to get container name from environment variable or hostname
-    container_name = os.getenv('HOSTNAME', 'package-info-service')
-    
-    # Check if running in Docker
-    try:
-        info = get_container_info(container_name)
-        # Check if we got an error response
-        if 'error' in info:
-            raise Exception(info['error'])
-        return jsonify(info)
-    except (docker.errors.DockerException, docker.errors.NotFound, Exception):
-        return jsonify({
-            'error': 'Could not determine container information',
-            'hostname': container_name
-        })
+    """Get label-based information about this service container."""
+    container_name = os.getenv('HOSTNAME', 'dockinfo')
+    info = get_service_info_from_labels(container_name)
+    return jsonify(info)
 
 
-@app.route('/labels', methods=['GET'])
-def labels_info():
+@app.route('/package', methods=['GET'])
+def package_info_query():
     """
-    Get information based on labels from the calling container.
+    Get label-based information about a package/service.
     Expects 'X-Container-Name' header or 'container' query parameter.
     """
     container_name = request.headers.get('X-Container-Name') or request.args.get('container')
@@ -156,15 +176,15 @@ def labels_info():
     if not container_name:
         return jsonify({'error': 'Container name required (header X-Container-Name or query param container)'}), 400
     
-    info = get_container_info(container_name)
+    info = get_service_info_from_labels(container_name)
     return jsonify(info)
 
 
 @app.route('/by-label', methods=['GET'])
-def containers_by_label():
+def packages_by_label():
     """
-    Find containers by label filter.
-    Example: /by-label?package-info.enable=true
+    Find packages by label filter (returns label-based info only).
+    Example: /by-label?label=package-info.enable=true
     """
     label_filter = request.args.get('label')
     if not label_filter:
@@ -180,66 +200,70 @@ def containers_by_label():
         # Get all containers
         client = get_docker_client()
         all_containers = client.containers.list(all=True)
-        matching_containers = []
+        matching_services = []
         
         for container in all_containers:
             labels = container.labels or {}
             if labels.get(label_key) == label_value:
-                matching_containers.append({
-                    'name': container.name,
-                    'id': container.id[:12],
-                    'image': container.image.tags[0] if container.image.tags else container.image.id,
-                    'status': container.status,
-                    'labels': labels,
-                })
+                service = {
+                    'name': labels.get('package-info.name') or container.name,
+                    'url': labels.get('package-info.service.url') or labels.get('package-info.url', ''),
+                    'description': labels.get('package-info.description', ''),
+                }
+                if service['name']:
+                    matching_services.append(service)
         
         return jsonify({
             'filter': label_filter,
-            'count': len(matching_containers),
-            'containers': matching_containers
+            'count': len(matching_services),
+            'packages': matching_services
         })
     except docker.errors.DockerException as e:
         logger.error(f"Docker connection error: {e}")
         return jsonify({'error': 'Docker daemon not available. Make sure Docker socket is mounted.'}), 503
     except Exception as e:
-        logger.error(f"Error filtering containers by label: {e}")
+        logger.error(f"Error filtering packages by label: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/my-info', methods=['GET'])
 def my_info():
     """
-    Get information about the calling container.
-    The calling container should set 'X-Container-Name' header or 
-    have a label 'package-info.enable=true' and we'll try to match by hostname.
+    Get label-based information about the calling container.
+    Expects 'X-Container-Name' header or 'container' query parameter.
     """
-    # Try to get container name from header first
-    container_name = request.headers.get('X-Container-Name')
-    
-    # If not provided, try to infer from hostname (if calling container sets HOSTNAME)
-    if not container_name:
-        hostname = request.headers.get('X-Hostname') or os.getenv('HOSTNAME')
-        if hostname:
-            try:
-                client = get_docker_client()
-                container = client.containers.get(hostname)
-                container_name = container.name
-            except (docker.errors.DockerException, docker.errors.NotFound):
-                pass
+    container_name = request.headers.get('X-Container-Name') or request.args.get('container')
     
     if not container_name:
         return jsonify({
-            'error': 'Could not determine container name',
-            'hint': 'Set X-Container-Name header or X-Hostname header'
+            'error': 'Container name required',
+            'hint': 'Set X-Container-Name header or container query parameter'
         }), 400
     
-    info = get_container_info(container_name)
+    info = get_service_info_from_labels(container_name)
     return jsonify(info)
+
+
+@app.route('/packages', methods=['GET'])
+def list_packages():
+    """
+    List all enabled packages/services based on labels.
+    Only returns services with package-info.enable=true label.
+    Returns name, url, and description from labels.
+    """
+    services = get_enabled_services()
+    return jsonify({
+        'count': len(services),
+        'packages': services
+    })
 
 
 @app.route('/list', methods=['GET'])
 def list_containers():
-    """List all containers with basic information."""
+    """
+    DEPRECATED: Use /packages instead.
+    List all containers with basic information.
+    """
     try:
         client = get_docker_client()
         all_containers = client.containers.list(all=True)

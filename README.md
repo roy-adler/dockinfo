@@ -1,14 +1,13 @@
 # DockInfo
 
-A lightweight HTTP API service that provides Docker container and image information in JSON format. Designed to be called by other Docker containers, with label-based discovery and configuration similar to Watchtower's label system.
+A lightweight HTTP API service that provides a label-based service registry. Services define their metadata (name, URL, description) via Docker Compose labels, and DockInfo exposes them via a simple REST API.
 
 ## Features
 
-- Get container information by name
-- Get image information
-- List all containers
-- Self-information endpoint
-- Label-based container lookup
+- **Label-based service registry** - Services register themselves via Docker Compose labels
+- **Selective visibility** - Only services with `package-info.enable=true` appear in listings
+- **No runtime Docker info** - Returns only label-based metadata, not container status/ports/etc.
+- **Simple REST API** - Easy to query from other services or frontends
 
 ## Usage
 
@@ -17,7 +16,7 @@ Add to your `compose.yaml`:
 ```yaml
 services:
   dockinfo:
-    build: ./dockinfo
+    image: ghcr.io/royadler/dockinfo:latest
     container_name: dockinfo
     restart: always
     ports:
@@ -27,10 +26,49 @@ services:
     environment:
       - PORT=8080
 
-  your-service:
-    image: your-image:latest
+  # Your services register themselves with labels
+  my-service:
+    image: my-image:latest
     labels:
-      - "package-info.service.url=http://dockinfo:8080"
+      - "package-info.enable=true"
+      - "package-info.name=My Service"
+      - "package-info.service.url=https://myservice.royadler.de"
+      - "package-info.description=Description of my service"
+
+  another-service:
+    image: another-image:latest
+    labels:
+      - "package-info.enable=true"
+      - "package-info.name=Another Service"
+      - "package-info.service.url=https://another.royadler.de"
+      - "package-info.description=Another service description"
+```
+
+## Label Schema
+
+Services must have the following labels to appear in the registry:
+
+### Required Labels
+
+- `package-info.enable=true` - Enables the service to appear in listings
+
+### Optional Labels
+
+- `package-info.name` - Display name (defaults to container name if not set)
+- `package-info.service.url` or `package-info.url` - Service URL
+- `package-info.description` - Service description
+
+### Example
+
+```yaml
+services:
+  my-app:
+    image: my-app:latest
+    labels:
+      - "package-info.enable=true"
+      - "package-info.name=My Application"
+      - "package-info.service.url=https://myapp.royadler.de"
+      - "package-info.description=A web application for managing tasks"
 ```
 
 ## API Endpoints
@@ -38,132 +76,143 @@ services:
 ### `GET /health`
 Health check endpoint.
 
-### `GET /container/<container_name>`
-Get information about a specific container.
+**Response:**
+```json
+{
+  "status": "healthy"
+}
+```
+
+### `GET /packages`
+List all enabled packages/services (only those with `package-info.enable=true`).
 
 **Example:**
 ```bash
-curl http://dockinfo:8080/container/my-container
+curl https://dockinfo.royadler.de/packages
 ```
 
 **Response:**
 ```json
 {
-  "name": "my-container",
-  "id": "abc123def456",
-  "image": "my-image:latest",
-  "image_id": "sha256:...",
-  "status": "running",
-  "labels": {...},
-  "created": "2024-01-01T00:00:00Z",
-  "ports": {...},
-  "environment": [...]
+  "count": 2,
+  "packages": [
+    {
+      "name": "My Service",
+      "url": "https://myservice.royadler.de",
+      "description": "Description of my service"
+    },
+    {
+      "name": "Another Service",
+      "url": "https://another.royadler.de",
+      "description": "Another service description"
+    }
+  ]
 }
 ```
 
-### `GET /image/<image_name>`
-Get information about a Docker image.
+### `GET /package/<container_name>`
+Get label-based information about a specific package/service.
 
 **Example:**
 ```bash
-curl http://dockinfo:8080/image/my-image:latest
+curl https://dockinfo.royadler.de/package/my-service
 ```
 
-### `GET /self`
-Get information about the container running this service.
-
-### `GET /my-info`
-Get information about the calling container (via headers).
-
-**Example:**
-```bash
-curl -H "X-Container-Name: my-container" http://dockinfo:8080/my-info
+**Response:**
+```json
+{
+  "name": "My Service",
+  "url": "https://myservice.royadler.de",
+  "description": "Description of my service"
+}
 ```
 
-### `GET /labels?container=<container_name>`
-Get container information via query parameter or `X-Container-Name` header.
+### `GET /package?container=<container_name>`
+Get label-based information via query parameter or `X-Container-Name` header.
 
 **Example:**
 ```bash
-curl -H "X-Container-Name: my-container" http://dockinfo:8080/labels
+curl "https://dockinfo.royadler.de/package?container=my-service"
 # or
-curl http://dockinfo:8080/labels?container=my-container
+curl -H "X-Container-Name: my-service" https://dockinfo.royadler.de/package
 ```
 
 ### `GET /by-label?label=<key>=<value>`
-Find containers by label filter (useful for discovering containers with specific labels).
+Find packages by label filter (returns label-based info only).
 
 **Example:**
 ```bash
-curl http://dockinfo:8080/by-label?label=package-info.enable=true
+curl "https://dockinfo.royadler.de/by-label?label=package-info.enable=true"
 ```
 
-### `GET /list`
-List all containers with basic information.
+**Response:**
+```json
+{
+  "filter": "package-info.enable=true",
+  "count": 2,
+  "packages": [
+    {
+      "name": "My Service",
+      "url": "https://myservice.royadler.de",
+      "description": "Description of my service"
+    }
+  ]
+}
+```
+
+### `GET /self`
+Get label-based information about the dockinfo container itself.
+
+### `GET /my-info`
+Get label-based information about the calling container.
 
 **Example:**
 ```bash
-curl http://dockinfo:8080/list
+curl -H "X-Container-Name: my-service" https://dockinfo.royadler.de/my-info
+# or
+curl "https://dockinfo.royadler.de/my-info?container=my-service"
 ```
 
-## Label-Based Configuration
+## Calling from Other Services
 
-Containers can use labels to configure how they interact with the service:
-
-### Enable a container to be queried
-```yaml
-your-service:
-  image: your-image:latest
-  labels:
-    - "package-info.enable=true"
-    - "package-info.service.url=http://dockinfo:8080"
-```
-
-### Query containers by label
-```bash
-# Find all containers with package-info.enable=true
-curl http://dockinfo:8080/by-label?label=package-info.enable=true
-```
-
-## Calling from Other Containers
-
-Other containers can call this service using the service name as hostname:
+Other services can query DockInfo to discover registered services:
 
 ```bash
-# From within another container - get info about another container
-curl http://dockinfo:8080/container/my-container
+# List all enabled packages
+curl https://dockinfo.royadler.de/packages
 
-# Get your own info (set container name in header)
-curl -H "X-Container-Name: my-container" http://dockinfo:8080/my-info
+# Get info about a specific package
+curl https://dockinfo.royadler.de/package/my-service
 
-# Find containers by label
-curl http://dockinfo:8080/by-label?label=package-info.enable=true
+# Find packages by label
+curl "https://dockinfo.royadler.de/by-label?label=package-info.enable=true"
 ```
 
-### Example: Container calling the service
-
-In your application code (running in a container), you can query the service:
+### Example: Python Client
 
 ```python
 import requests
-import os
 
-# Get service URL from label or environment
-service_url = os.getenv('PACKAGE_INFO_SERVICE_URL', 'http://dockinfo:8080')
+# Get all registered packages
+response = requests.get('https://dockinfo.royadler.de/packages')
+packages = response.json()
 
-# Get info about yourself
-response = requests.get(
-    f"{service_url}/my-info",
-    headers={"X-Container-Name": os.getenv('HOSTNAME')}
-)
-my_info = response.json()
+for package in packages['packages']:
+    print(f"{package['name']}: {package['url']}")
+    print(f"  {package['description']}")
+```
 
-# Or find other containers with a specific label
-response = requests.get(
-    f"{service_url}/by-label",
-    params={"label": "package-info.enable=true"}
-)
-enabled_containers = response.json()
+### Example: Frontend Integration
+
+```javascript
+// Fetch all registered services
+fetch('https://dockinfo.royadler.de/packages')
+  .then(res => res.json())
+  .then(data => {
+    data.packages.forEach(pkg => {
+      console.log(`${pkg.name}: ${pkg.url}`);
+    });
+  });
 ```
 
 ## Environment Variables
@@ -173,23 +222,9 @@ enabled_containers = response.json()
 - `DOCKER_HOST` - Docker daemon URL (default: auto-detect, e.g., `unix:///var/run/docker.sock`)
 - `DOCKER_SOCKET` - Custom Docker socket path inside container (default: `/var/run/docker.sock`)
 
-### Custom Docker Socket Path
+## Notes
 
-If you need to mount the Docker socket from a custom location on the host:
-
-```yaml
-services:
-  dockinfo:
-    build: ./dockinfo
-    container_name: dockinfo
-    restart: always
-    ports:
-      - "8080:8080"
-    volumes:
-      - ~/docker-volumes/dockerinfo/docker.sock:/var/run/docker.sock:ro
-    environment:
-      - PORT=8080
-```
-
-The host path doesn't matter - as long as it's mounted to `/var/run/docker.sock` inside the container (or you set `DOCKER_SOCKET` to your custom path), it will work correctly.
-
+- **Label-based only**: DockInfo reads only from Docker labels, not runtime container status
+- **Selective registration**: Only services with `package-info.enable=true` appear in listings
+- **No runtime info**: The API does not return container status, ports, or other runtime Docker information
+- **Production ready**: Uses gunicorn WSGI server, not Flask's development server
