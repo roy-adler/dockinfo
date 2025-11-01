@@ -5,9 +5,11 @@ Can be called by other Docker containers via labels or HTTP requests.
 """
 
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 import docker
 import logging
 import os
+import fnmatch
 
 # Configure logging
 logging.basicConfig(
@@ -17,6 +19,42 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Configure CORS with wildcard support
+# Allow origins from environment variable (comma-separated list)
+# Supports wildcards like *.royadler.de
+# Default to https://royadler.de if not set
+allowed_origins_config = os.getenv('CORS_ORIGINS', 'https://royadler.de').split(',')
+allowed_origins_config = [origin.strip() for origin in allowed_origins_config if origin.strip()]
+
+def origin_allowed(origin):
+    """Check if origin is allowed, supporting wildcard patterns."""
+    if not origin:
+        return False
+    
+    for pattern in allowed_origins_config:
+        # Exact match
+        if origin == pattern:
+            return True
+        # Wildcard pattern match (e.g., *.royadler.de)
+        if '*' in pattern:
+            # Convert wildcard pattern to fnmatch pattern
+            fnmatch_pattern = pattern.replace('*.', '*.').replace('*', '*')
+            if fnmatch.fnmatch(origin, fnmatch_pattern):
+                return True
+            # Also check without protocol for flexibility
+            if '://' in pattern:
+                _, domain_pattern = pattern.split('://', 1)
+                if '://' in origin:
+                    _, origin_domain = origin.split('://', 1)
+                    if fnmatch.fnmatch(origin_domain, domain_pattern):
+                        return True
+    
+    return False
+
+CORS(app, origins=origin_allowed, supports_credentials=True)
+logger.info(f"CORS enabled for origins (with wildcard support): {allowed_origins_config}")
+
 docker_client = None
 
 

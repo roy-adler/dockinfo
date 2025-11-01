@@ -219,6 +219,10 @@ fetch('https://dockinfo.royadler.de/packages')
 
 - `PORT` - Port to listen on (default: 8080)
 - `HOST` - Host to bind to (default: 0.0.0.0)
+- `CORS_ORIGINS` - Comma-separated list of allowed CORS origins (default: `https://royadler.de`)
+  - Supports wildcard patterns like `*.royadler.de` to allow all subdomains
+  - Example: `CORS_ORIGINS=https://royadler.de,https://*.royadler.de`
+  - Example: `CORS_ORIGINS=https://royadler.de,https://app.royadler.de,http://localhost:3000`
 - `DOCKER_HOST` - Docker daemon URL (default: auto-detect, e.g., `unix:///var/run/docker.sock`)
 - `DOCKER_SOCKET` - Custom Docker socket path inside container (default: `/var/run/docker.sock`)
 
