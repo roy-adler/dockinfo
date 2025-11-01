@@ -170,4 +170,26 @@ enabled_containers = response.json()
 
 - `PORT` - Port to listen on (default: 8080)
 - `HOST` - Host to bind to (default: 0.0.0.0)
+- `DOCKER_HOST` - Docker daemon URL (default: auto-detect, e.g., `unix:///var/run/docker.sock`)
+- `DOCKER_SOCKET` - Custom Docker socket path inside container (default: `/var/run/docker.sock`)
+
+### Custom Docker Socket Path
+
+If you need to mount the Docker socket from a custom location on the host:
+
+```yaml
+services:
+  dockinfo:
+    build: ./dockinfo
+    container_name: dockinfo
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ~/docker-volumes/dockerinfo/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - PORT=8080
+```
+
+The host path doesn't matter - as long as it's mounted to `/var/run/docker.sock` inside the container (or you set `DOCKER_SOCKET` to your custom path), it will work correctly.
 

@@ -17,13 +17,43 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-docker_client = docker.from_env()
+docker_client = None
+
+
+def get_docker_client():
+    """Get Docker client, initializing it lazily if needed."""
+    global docker_client
+    if docker_client is None:
+        try:
+            # Allow custom Docker socket path via environment variable
+            # Defaults to standard location: /var/run/docker.sock
+            docker_socket = os.getenv('DOCKER_SOCKET', '/var/run/docker.sock')
+            base_url = os.getenv('DOCKER_HOST')
+            
+            if base_url:
+                # If DOCKER_HOST is set, use it (e.g., unix:///var/run/docker.sock)
+                docker_client = docker.DockerClient(base_url=base_url)
+            elif docker_socket != '/var/run/docker.sock':
+                # If custom socket path is specified, construct unix socket URL
+                docker_client = docker.DockerClient(base_url=f'unix://{docker_socket}')
+            else:
+                # Use default from_env() which looks for /var/run/docker.sock or DOCKER_HOST
+                docker_client = docker.from_env()
+            
+            # Test the connection
+            docker_client.ping()
+            logger.info("Docker client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Docker client: {e}")
+            raise docker.errors.DockerException(f"Docker daemon not available: {e}")
+    return docker_client
 
 
 def get_container_info(container_name: str) -> dict:
     """Get information about a container."""
     try:
-        container = docker_client.containers.get(container_name)
+        client = get_docker_client()
+        container = client.containers.get(container_name)
         attrs = container.attrs
         
         info = {
@@ -39,6 +69,9 @@ def get_container_info(container_name: str) -> dict:
         }
         
         return info
+    except docker.errors.DockerException as e:
+        logger.error(f"Docker connection error: {e}")
+        return {'error': 'Docker daemon not available. Make sure Docker socket is mounted.'}
     except docker.errors.NotFound:
         return {'error': f'Container {container_name} not found'}
     except Exception as e:
@@ -49,7 +82,8 @@ def get_container_info(container_name: str) -> dict:
 def get_image_info(image_name: str) -> dict:
     """Get information about a Docker image."""
     try:
-        image = docker_client.images.get(image_name)
+        client = get_docker_client()
+        image = client.images.get(image_name)
         
         info = {
             'id': image.id,
@@ -61,6 +95,9 @@ def get_image_info(image_name: str) -> dict:
         }
         
         return info
+    except docker.errors.DockerException as e:
+        logger.error(f"Docker connection error: {e}")
+        return {'error': 'Docker daemon not available. Make sure Docker socket is mounted.'}
     except docker.errors.ImageNotFound:
         return {'error': f'Image {image_name} not found'}
     except Exception as e:
@@ -96,10 +133,12 @@ def self_info():
     
     # Check if running in Docker
     try:
-        container = docker_client.containers.get(container_name)
         info = get_container_info(container_name)
+        # Check if we got an error response
+        if 'error' in info:
+            raise Exception(info['error'])
         return jsonify(info)
-    except:
+    except (docker.errors.DockerException, docker.errors.NotFound, Exception):
         return jsonify({
             'error': 'Could not determine container information',
             'hostname': container_name
@@ -139,7 +178,8 @@ def containers_by_label():
         label_key, label_value = label_filter.split('=', 1)
         
         # Get all containers
-        all_containers = docker_client.containers.list(all=True)
+        client = get_docker_client()
+        all_containers = client.containers.list(all=True)
         matching_containers = []
         
         for container in all_containers:
@@ -158,6 +198,9 @@ def containers_by_label():
             'count': len(matching_containers),
             'containers': matching_containers
         })
+    except docker.errors.DockerException as e:
+        logger.error(f"Docker connection error: {e}")
+        return jsonify({'error': 'Docker daemon not available. Make sure Docker socket is mounted.'}), 503
     except Exception as e:
         logger.error(f"Error filtering containers by label: {e}")
         return jsonify({'error': str(e)}), 500
@@ -178,9 +221,10 @@ def my_info():
         hostname = request.headers.get('X-Hostname') or os.getenv('HOSTNAME')
         if hostname:
             try:
-                container = docker_client.containers.get(hostname)
+                client = get_docker_client()
+                container = client.containers.get(hostname)
                 container_name = container.name
-            except:
+            except (docker.errors.DockerException, docker.errors.NotFound):
                 pass
     
     if not container_name:
@@ -197,7 +241,8 @@ def my_info():
 def list_containers():
     """List all containers with basic information."""
     try:
-        all_containers = docker_client.containers.list(all=True)
+        client = get_docker_client()
+        all_containers = client.containers.list(all=True)
         containers = []
         
         for container in all_containers:
@@ -212,14 +257,17 @@ def list_containers():
             'count': len(containers),
             'containers': containers
         })
+    except docker.errors.DockerException as e:
+        logger.error(f"Docker connection error: {e}")
+        return jsonify({'error': 'Docker daemon not available. Make sure Docker socket is mounted.'}), 503
     except Exception as e:
         logger.error(f"Error listing containers: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8080))
+    port = int(os.getenv('PORT', '8080'))
     host = os.getenv('HOST', '0.0.0.0')
-    logger.info(f"Starting package info service on {host}:{port}")
+    logger.info("Starting package info service on %s:%s", host, port)
     app.run(host=host, port=port, debug=False)
 
