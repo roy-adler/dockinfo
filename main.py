@@ -60,7 +60,7 @@ def get_service_info_from_labels(container_name: str) -> dict:
         labels = container.labels or {}
         
         return {
-            'name': labels.get('dockinfo.name') or container.name,
+            'name': labels.get('dockinfo.name') or labels.get('dockinfo.service.name') or container.name,
             'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
             'description': labels.get('dockinfo.description', ''),
         }
@@ -74,41 +74,34 @@ def get_service_info_from_labels(container_name: str) -> dict:
         return {'error': str(e)}
 
 
-def get_enabled_services() -> list:
-    """
-    Get all services that have dockinfo.enable=true label.
-    Returns only label-based metadata (name, url, description).
-    """
+def get_container_info(container_name: str) -> dict:
+    """Get full Docker container information including runtime details."""
     try:
         client = get_docker_client()
-        all_containers = client.containers.list(all=True)
-        services = []
+        container = client.containers.get(container_name)
+        attrs = container.attrs
         
-        for container in all_containers:
-            labels = container.labels or {}
-            
-            # Only include containers with dockinfo.enable=true
-            if labels.get('dockinfo.enable', '').lower() != 'true':
-                continue
-            
-            # Extract service information from labels
-            service = {
-                'name': labels.get('dockinfo.name') or container.name,
-                'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
-                'description': labels.get('dockinfo.description', ''),
-            }
-            
-            # Only add if it has at least a name
-            if service['name']:
-                services.append(service)
+        info = {
+            'name': container.name,
+            'id': container.id[:12],
+            'image': container.image.tags[0] if container.image.tags else container.image.id,
+            'image_id': container.image.id,
+            'status': container.status,
+            'labels': container.labels,
+            'created': attrs.get('Created'),
+            'ports': attrs.get('NetworkSettings', {}).get('Ports', {}),
+            'environment': attrs.get('Config', {}).get('Env', []),
+        }
         
-        return services
+        return info
     except docker.errors.DockerException as e:
         logger.error(f"Docker connection error: {e}")
-        return []
+        return {'error': 'Docker daemon not available. Make sure Docker socket is mounted.'}
+    except docker.errors.NotFound:
+        return {'error': f'Container {container_name} not found'}
     except Exception as e:
-        logger.error(f"Error getting enabled services: {e}")
-        return []
+        logger.error(f"Error getting container info: {e}")
+        return {'error': str(e)}
 
 
 def get_image_info(image_name: str) -> dict:
@@ -137,10 +130,54 @@ def get_image_info(image_name: str) -> dict:
         return {'error': str(e)}
 
 
+def get_enabled_services() -> list:
+    """
+    Get all services that have dockinfo.enable=true label.
+    Returns only label-based metadata (name, url, description).
+    """
+    try:
+        client = get_docker_client()
+        all_containers = client.containers.list(all=True)
+        services = []
+        
+        for container in all_containers:
+            labels = container.labels or {}
+            
+            # Only include containers with dockinfo.enable=true
+            if labels.get('dockinfo.enable', '').lower() != 'true':
+                continue
+            
+            # Extract service information from labels
+            service = {
+                'name': labels.get('dockinfo.name') or labels.get('dockinfo.service.name') or container.name,
+                'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
+                'description': labels.get('dockinfo.description', ''),
+            }
+            
+            # Only add if it has at least a name
+            if service['name']:
+                services.append(service)
+        
+        return services
+    except docker.errors.DockerException as e:
+        logger.error(f"Docker connection error: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Error getting enabled services: {e}")
+        return []
+
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint."""
     return jsonify({'status': 'healthy'})
+
+
+@app.route('/container/<container_name>', methods=['GET'])
+def container_info(container_name: str):
+    """Get full Docker container information including runtime details."""
+    info = get_container_info(container_name)
+    return jsonify(info)
 
 
 @app.route('/package/<container_name>', methods=['GET'])
@@ -152,7 +189,7 @@ def package_info(container_name: str):
 
 @app.route('/image/<path:image_name>', methods=['GET'])
 def image_info(image_name: str):
-    """Get information about a specific image."""
+    """Get information about a specific Docker image."""
     info = get_image_info(image_name)
     return jsonify(info)
 
@@ -206,7 +243,7 @@ def packages_by_label():
             labels = container.labels or {}
             if labels.get(label_key) == label_value:
                 service = {
-                    'name': labels.get('dockinfo.name') or container.name,
+                    'name': labels.get('dockinfo.name') or labels.get('dockinfo.service.name') or container.name,
                     'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
                     'description': labels.get('dockinfo.description', ''),
                 }
@@ -260,10 +297,7 @@ def list_packages():
 
 @app.route('/list', methods=['GET'])
 def list_containers():
-    """
-    DEPRECATED: Use /packages instead.
-    List all containers with basic information.
-    """
+    """List all containers with basic Docker runtime information."""
     try:
         client = get_docker_client()
         all_containers = client.containers.list(all=True)

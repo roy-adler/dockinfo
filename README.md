@@ -54,7 +54,7 @@ Services must have the following labels to appear in the registry:
 
 ### Optional Labels
 
-- `dockinfo.name` - Display name (defaults to container name if not set)
+- `dockinfo.name` or `dockinfo.service.name` - Display name (defaults to container name if not set)
 - `dockinfo.service.url` or `dockinfo.url` - Service URL
 - `dockinfo.description` - Service description
 
