@@ -59,7 +59,6 @@ Services must have the following labels to appear in the registry:
 - `dockinfo.name` or `dockinfo.service.name` - Display name (defaults to container name if not set)
 - `dockinfo.application.url` - Application URL
 - `dockinfo.github.url` - GitHub repository URL
-- `dockinfo.service.url` or `dockinfo.url` - Legacy fallback for application URL
 - `dockinfo.description` - Service description
 
 ### Example
@@ -105,14 +104,12 @@ curl https://dockinfo.royadler.de/packages
       "name": "My Service",
       "application_url": "https://myservice.royadler.de",
       "github_url": "https://github.com/example/my-service",
-      "url": "https://myservice.royadler.de",
       "description": "Description of my service"
     },
     {
       "name": "Another Service",
       "application_url": "https://another.royadler.de",
       "github_url": "https://github.com/example/another-service",
-      "url": "https://another.royadler.de",
       "description": "Another service description"
     }
   ]
@@ -133,7 +130,6 @@ curl https://dockinfo.royadler.de/package/my-service
   "name": "My Service",
   "application_url": "https://myservice.royadler.de",
   "github_url": "https://github.com/example/my-service",
-  "url": "https://myservice.royadler.de",
   "description": "Description of my service"
 }
 ```
@@ -166,7 +162,6 @@ curl "https://dockinfo.royadler.de/by-label?label=dockinfo.enable=true"
       "name": "My Service",
       "application_url": "https://myservice.royadler.de",
       "github_url": "https://github.com/example/my-service",
-      "url": "https://myservice.royadler.de",
       "description": "Description of my service"
     }
   ]

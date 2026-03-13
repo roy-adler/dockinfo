@@ -74,19 +74,13 @@ docker_client = None
 
 def build_service_info(labels: dict, container_name: str) -> dict:
     """Build label-based service metadata with separate application/github links."""
-    application_url = (
-        labels.get('dockinfo.application.url')
-        or labels.get('dockinfo.service.url')
-        or labels.get('dockinfo.url', '')
-    )
+    application_url = labels.get('dockinfo.application.url', '')
     github_url = labels.get('dockinfo.github.url', '')
 
     return {
         'name': labels.get('dockinfo.name') or labels.get('dockinfo.service.name') or container_name,
         'application_url': application_url,
         'github_url': github_url,
-        # Keep legacy field for existing clients.
-        'url': application_url,
         'description': labels.get('dockinfo.description', ''),
     }
 
