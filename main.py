@@ -72,6 +72,25 @@ logger.info(f"CORS enabled for origins (with wildcard support): {allowed_origins
 docker_client = None
 
 
+def build_service_info(labels: dict, container_name: str) -> dict:
+    """Build label-based service metadata with separate application/github links."""
+    application_url = (
+        labels.get('dockinfo.application.url')
+        or labels.get('dockinfo.service.url')
+        or labels.get('dockinfo.url', '')
+    )
+    github_url = labels.get('dockinfo.github.url', '')
+
+    return {
+        'name': labels.get('dockinfo.name') or labels.get('dockinfo.service.name') or container_name,
+        'application_url': application_url,
+        'github_url': github_url,
+        # Keep legacy field for existing clients.
+        'url': application_url,
+        'description': labels.get('dockinfo.description', ''),
+    }
+
+
 def get_docker_client():
     """Get Docker client, initializing it lazily if needed."""
     global docker_client
@@ -104,18 +123,14 @@ def get_docker_client():
 def get_service_info_from_labels(container_name: str) -> dict:
     """
     Get service information from labels only (no runtime Docker info).
-    Returns name, url, description from labels.
+    Returns name, links, and description from labels.
     """
     try:
         client = get_docker_client()
         container = client.containers.get(container_name)
         labels = container.labels or {}
         
-        return {
-            'name': labels.get('dockinfo.name') or labels.get('dockinfo.service.name') or container.name,
-            'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
-            'description': labels.get('dockinfo.description', ''),
-        }
+        return build_service_info(labels, container.name)
     except docker.errors.DockerException as e:
         logger.error(f"Docker connection error: {e}")
         return {'error': 'Docker daemon not available. Make sure Docker socket is mounted.'}
@@ -185,7 +200,7 @@ def get_image_info(image_name: str) -> dict:
 def get_enabled_services() -> list:
     """
     Get all services that have dockinfo.enable=true label.
-    Returns only label-based metadata (name, url, description).
+    Returns only label-based metadata (name, links, description).
     """
     try:
         client = get_docker_client()
@@ -200,11 +215,7 @@ def get_enabled_services() -> list:
                 continue
             
             # Extract service information from labels
-            service = {
-                'name': labels.get('dockinfo.name') or labels.get('dockinfo.service.name') or container.name,
-                'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
-                'description': labels.get('dockinfo.description', ''),
-            }
+            service = build_service_info(labels, container.name)
             
             # Only add if it has at least a name
             if service['name']:
@@ -294,11 +305,7 @@ def packages_by_label():
         for container in all_containers:
             labels = container.labels or {}
             if labels.get(label_key) == label_value:
-                service = {
-                    'name': labels.get('dockinfo.name') or labels.get('dockinfo.service.name') or container.name,
-                    'url': labels.get('dockinfo.service.url') or labels.get('dockinfo.url', ''),
-                    'description': labels.get('dockinfo.description', ''),
-                }
+                service = build_service_info(labels, container.name)
                 if service['name']:
                     matching_services.append(service)
         
@@ -338,7 +345,7 @@ def list_packages():
     """
     List all enabled packages/services based on labels.
     Only returns services with dockinfo.enable=true label.
-    Returns name, url, and description from labels.
+    Returns name, application/github links, and description from labels.
     """
     services = get_enabled_services()
     return jsonify({

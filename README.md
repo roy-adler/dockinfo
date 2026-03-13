@@ -32,7 +32,8 @@ services:
     labels:
       - "dockinfo.enable=true"
       - "dockinfo.name=My Service"
-      - "dockinfo.service.url=https://myservice.royadler.de"
+      - "dockinfo.application.url=https://myservice.royadler.de"
+      - "dockinfo.github.url=https://github.com/example/my-service"
       - "dockinfo.description=Description of my service"
 
   another-service:
@@ -40,7 +41,8 @@ services:
     labels:
       - "dockinfo.enable=true"
       - "dockinfo.name=Another Service"
-      - "dockinfo.service.url=https://another.royadler.de"
+      - "dockinfo.application.url=https://another.royadler.de"
+      - "dockinfo.github.url=https://github.com/example/another-service"
       - "dockinfo.description=Another service description"
 ```
 
@@ -55,7 +57,9 @@ Services must have the following labels to appear in the registry:
 ### Optional Labels
 
 - `dockinfo.name` or `dockinfo.service.name` - Display name (defaults to container name if not set)
-- `dockinfo.service.url` or `dockinfo.url` - Service URL
+- `dockinfo.application.url` - Application URL
+- `dockinfo.github.url` - GitHub repository URL
+- `dockinfo.service.url` or `dockinfo.url` - Legacy fallback for application URL
 - `dockinfo.description` - Service description
 
 ### Example
@@ -67,7 +71,8 @@ services:
     labels:
       - "dockinfo.enable=true"
       - "dockinfo.name=My Application"
-      - "dockinfo.service.url=https://myapp.royadler.de"
+      - "dockinfo.application.url=https://myapp.royadler.de"
+      - "dockinfo.github.url=https://github.com/example/my-app"
       - "dockinfo.description=A web application for managing tasks"
 ```
 
@@ -98,11 +103,15 @@ curl https://dockinfo.royadler.de/packages
   "packages": [
     {
       "name": "My Service",
+      "application_url": "https://myservice.royadler.de",
+      "github_url": "https://github.com/example/my-service",
       "url": "https://myservice.royadler.de",
       "description": "Description of my service"
     },
     {
       "name": "Another Service",
+      "application_url": "https://another.royadler.de",
+      "github_url": "https://github.com/example/another-service",
       "url": "https://another.royadler.de",
       "description": "Another service description"
     }
@@ -122,6 +131,8 @@ curl https://dockinfo.royadler.de/package/my-service
 ```json
 {
   "name": "My Service",
+  "application_url": "https://myservice.royadler.de",
+  "github_url": "https://github.com/example/my-service",
   "url": "https://myservice.royadler.de",
   "description": "Description of my service"
 }
@@ -153,6 +164,8 @@ curl "https://dockinfo.royadler.de/by-label?label=dockinfo.enable=true"
   "packages": [
     {
       "name": "My Service",
+      "application_url": "https://myservice.royadler.de",
+      "github_url": "https://github.com/example/my-service",
       "url": "https://myservice.royadler.de",
       "description": "Description of my service"
     }
@@ -198,7 +211,8 @@ response = requests.get('https://dockinfo.royadler.de/packages')
 packages = response.json()
 
 for package in packages['packages']:
-    print(f"{package['name']}: {package['url']}")
+    print(f"{package['name']}: {package['application_url']}")
+    print(f"  repo: {package['github_url']}")
     print(f"  {package['description']}")
 ```
 
@@ -210,7 +224,7 @@ fetch('https://dockinfo.royadler.de/packages')
   .then(res => res.json())
   .then(data => {
     data.packages.forEach(pkg => {
-      console.log(`${pkg.name}: ${pkg.url}`);
+      console.log(`${pkg.name}: ${pkg.application_url} (${pkg.github_url})`);
     });
   });
 ```
